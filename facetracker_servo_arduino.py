@@ -37,9 +37,6 @@ servoTiltPosition = 30 # initial tilt position
 TILT_PIN = 9
 PAN_PIN = 10
 
-LAST_DETECTED = False
-CENTER_CAM = True
-
 board = a.Arduino('115200', port="/dev/ttyACM0")
 servo = a.Servos(board)
 
@@ -88,25 +85,11 @@ def detect_and_draw(img, cascade):
     return midFace
     
 def move(SERVO_PIN, angle):
-    '''Moves the specified servo to the supplied angle.
-
-    Arguments:
-        servo
-          the servo number to command, an integer from 1-4
-        angle
-          the desired servo angle, an integer from 0 to 180
-
-    (e.g.) >>> servo.move(2, 90)
-           ... # "move servo #2 to 90 degrees"'''
-    #print (SERVO_PIN, angle)
     if (min_pwm <= angle <= max_pwm):
         servo.write(SERVO_PIN, angle)
-        time.sleep(0.2)
-        #ser.write(chr(255))
-        #ser.write(chr(servo))
-        #ser.write(chr(angle))
+        time.sleep(0.2) # give the servo time to get to destination
     else:
-        print "Servo angle must be an integer between 0 and 180.\n"
+        print "Servo angle must be an integer between min and max pwm.\n"
     
 
 def rotate_about_center(src, angle, scale=1.):
@@ -128,52 +111,32 @@ def rotate_about_center(src, angle, scale=1.):
     return cv2.warpAffine(src, rot_mat, (int(math.ceil(nw)), int(math.ceil(nh))), flags=cv2.INTER_LANCZOS4)
 
 def np_array_to_iplimage(source):
+    # convert numpy image array back to iplimage 
     bitmap = cv.CreateImageHeader((source.shape[1], source.shape[0]), cv.IPL_DEPTH_8U, 3)
     cv.SetData(bitmap, source.tostring(), 
                source.dtype.itemsize * 3 * source.shape[1])
     return(bitmap)
 
 if __name__ == '__main__':
-    #ser=serial.Serial(port='/dev/ttyUSB0',baudrate=9600,timeout=1)
-    #ser=serial.Serial(port='/dev/ttyACM0',baudrate=9600,timeout=1)
- 
-    # parse cmd line options, setup Haar classifier
-    #parser = OptionParser(usage = "usage: %prog [options] [camera_index]")
-    #parser.add_option("-c", "--cascade", action="store", dest="cascade", type="str", help="Haar cascade file, default %default", default = "./haarcascade_frontalface_alt.xml")
-    #(options, args) = parser.parse_args()
+
     HAAR_CASCADE = "haarcascade_frontalface_alt.xml"
 
     cascade = cv.Load(HAAR_CASCADE)
     capture = cv.CreateCameraCapture(0)
 
-    #if len(args) != 1:
-    #    parser.print_help()
-    #    sys.exit(1)
- 
-    #input_name = args[0]
-    #if input_name.isdigit():
-    #    capture = cv.CreateCameraCapture(int(input_name))
-    #else:
-    #    print "We need a camera input! Specify camera index e.g. 0"
-    #    sys.exit(0)
- 
     cv.NamedWindow("result", 1)
  
-    increment = 5
-
-    if CENTER_CAM:
-        move(PAN_PIN, servoPanPosition)
-        move(TILT_PIN, servoTiltPosition)
-        print("Initialising to: ", PAN_PIN, TILT_PIN)
-        time.sleep(2)
-        print("finished initialising")
+    move(PAN_PIN, servoPanPosition)
+    move(TILT_PIN, servoTiltPosition)
 
     if capture:
         frame_copy = None
  
         while True:
             frame = cv.QueryFrame(capture)
+            # My webcam is sideways. Rorate -90 degrees
             frame = np_array_to_iplimage(rotate_about_center(np.asarray(frame[:,:]), -90))
+            
             if not frame:
                 cv.WaitKey(0)
                 break
@@ -185,30 +148,12 @@ if __name__ == '__main__':
             else:
                 cv.Flip(frame, frame_copy, 0)
             
+            # where is the middle of the screen?
             midScreenX = (frame.width/2)
             midScreenY = (frame.height/2)
   
+            # try find a face, return the midface coordinates
             midFace = detect_and_draw(frame_copy, cascade)
-
-            if midFace is None:
-                print("No face found")
-                if not LAST_DETECTED and not CENTER_CAM:
-                    if servoPanPosition - abs(increment) <= min_pwm:
-                        increment = 5
-                    if servoPanPosition + increment >= max_pwm:
-                        increment = -5
-                        print("decrementing")
-         
-                    servoPanPosition = servoPanPosition + increment
-
-                    servoPanPosition = min(servoPanPosition, max_pwm)
-                    servoPanPosition = max(servoPanPosition, min_pwm)               
-
-                print(servoPanPosition, min_pwm, max_pwm)
-                CENTER_CAM = False
-                move(PAN_PIN, servoPanPosition)
-                LAST_DETECTED = False
-
 
             if midFace is not None:
                 LAST_DETECTED = True
